@@ -43,8 +43,42 @@ blk_sel="$(jq -n --argjson f "$blk_finalized" --argjson s "$blk_safe" --argjson 
 hex_h="$(jq -r '.number' <<<"$blk_sel")"
 H=$((16#${hex_h#0x}))  # numeric height
 snap_name="erigon-${H}-$(date -u +%Y%m%dT%H%M%SZ)"
+# --- Reuse window (default 2h = 7200s) ---
+MAX_REUSE_SECS="${MAX_REUSE_SECS:-7200}"
+
+# Try to find the latest previous stage snapshot dir
+latest_stage="$(ls -1dt "${STAGE_BASE}"/erigon-* 2>/dev/null | head -n1 || true)"
+reuse=0
+if [[ -n "$latest_stage" ]]; then
+  last_name="$(basename "$latest_stage")"                           # erigon-<H>-<TSZ>
+  last_ts="${last_name##*-}"                                       # <TSZ>
+  last_epoch="$(date -u -d "$last_ts" +%s 2>/dev/null || echo "")"
+  if [[ -n "$last_epoch" ]]; then
+    now_epoch="$(date -u +%s)"
+    delta="$((now_epoch - last_epoch))"
+    if (( delta < MAX_REUSE_SECS )); then
+      reuse=1
+      snap_name="$last_name"
+      echo "[reuse] Using previous snapshot dir: $snap_name (age ${delta}s < $MAX_REUSE_SECS)"
+    fi
+  fi
+fi
+
+# If not reusing, create a fresh name
+if (( reuse == 0 )); then
+  snap_name="erigon-${H}-$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+
 STAGE_DIR="${STAGE_BASE}/${snap_name}"
 OUT_DIR="${OUT_BASE}/${snap_name}"
+mkdir -p "$STAGE_DIR" "$OUT_DIR/chaindata"
+
+# If reusing, clean old OUT artifacts (we’ll repack fresh)
+if (( reuse == 1 )); then
+  echo "[reuse] Cleaning previous OUT artifacts in $OUT_DIR"
+  rm -f "$OUT_DIR"/chaindata/*.zst 2>/dev/null || true
+  rm -f "$OUT_DIR"/manifest*.json 2>/dev/null || true
+fi
 mkdir -p "$STAGE_DIR" "$OUT_DIR/chaindata"
 
 echo "[2/8] First rsync (node running) → $STAGE_DIR"
