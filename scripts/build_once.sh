@@ -49,15 +49,28 @@ mkdir -p "$STAGE_DIR" "$OUT_DIR/chaindata"
 
 echo "[2/8] First rsync (node running) → $STAGE_DIR"
 rsync -aHAX --numeric-ids --delete \
-  --exclude='logs/**' --exclude='tmp/**' --exclude='cache/**' --exclude='**/mdbx.lck' \
-  "$DATADIR/." "$STAGE_DIR/"
+  --exclude='logs/**' \
+  --exclude='tmp/**' \
+  --exclude='cache/**' \
+  --exclude='temp/**' \
+  --exclude='etl-temp/**' \
+  --exclude='**/mdbx.lck' \
+  --info=progress2 \
+  "$DATADIR/." "$STAGE_DIR/" \
+  || { ec=$?; if [ $ec -ne 24 ]; then echo "[rsync] failed with code $ec"; exit $ec; else echo "[rsync] some files vanished (code 24) — OK"; fi; }
 
 echo "[3/8] Send SIGTERM to Erigon and wait for clean shutdown. Press Enter when done."
 read -r _
 
 echo "[4/8] Second rsync (delta, minutes) → $STAGE_DIR"
 rsync -aHAX --numeric-ids --delete \
-  --exclude='logs/**' --exclude='tmp/**' --exclude='cache/**' --exclude='**/mdbx.lck' \
+  --exclude='logs/**' \
+  --exclude='tmp/**' \
+  --exclude='cache/**' \
+  --exclude='temp/**' \
+  --exclude='etl-temp/**' \
+  --exclude='**/mdbx.lck' \
+  --info=progress2 \
   "$DATADIR/." "$STAGE_DIR/"
 
 echo "[5/8] You can start Erigon back now. Press Enter after it starts."
